@@ -1,0 +1,1 @@
+This software is intended for the analyzis of action potnetials contained in .abf files. The action potential data (signal) should be available on channel 0 of the .abf file. The action potentials should be recorded in a sweep-by-sweep manner, where the duration of the sweep equals the basic cycle length. An example of such .abf file (24o07000.abf) is available in the repository.
