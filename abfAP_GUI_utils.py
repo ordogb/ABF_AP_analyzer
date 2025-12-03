@@ -79,7 +79,7 @@ class ApPlot:
         self.toolbar.update()
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.sweep_number = None
+        self.sweep_number = 0
     
     def plot_sweeps(self, AP_data, abf, *args, **kwargs):
         AP_objects = AP_data.data
@@ -149,7 +149,8 @@ class ApData:
     def make_abf(self):
         self.abf = pyabf.ABF(self.fullpath)
     
-    def create_output(self):
+    def save_output(self, append:bool):
+        print("Updating average output")
         self.output = {}
         self.output['ABF'] = self.abfname
         self.output['First sweep included'] = self.avg_left
@@ -163,13 +164,13 @@ class ApData:
         APDs = {repol_level: [] for repol_level in self.repol_levels}
        
             
-        for sw in self.data.keys():
+        for sw in list(self.data.keys())[self.avg_left:self.avg_right+1]:
             Vrests.append(self.data[sw].Vrest)                
             APpeaks.append(self.data[sw].AP_peak)                
             dVdtmaxs.append(self.data[sw].dVdtmax)
             for repol_level in self.repol_levels:
                 APDs[repol_level].append(self.data[sw].APDs[repol_level])  
-        
+       
         self.output['avg Vrest (mV)'] = np.average(Vrests)    
         self.output['avg Vrest SD (mV)'] = np.std(Vrests)    
         self.output['avg AP peak (mV)'] = np.average(APpeaks)    
@@ -181,35 +182,47 @@ class ApData:
             self.output['avg APD{}'.format(repol_level)] = np.average(APDs[repol_level])
             APD_diff_list = [b - a for a,b in zip(APDs[repol_level], APDs[repol_level][1:])]
             self.output['APD{} STV'.format(repol_level)] = abs(np.sum(APD_diff_list)) / ((len(APD_diff_list)-1) * np.sqrt(2))
-        
-               
+    
         output = pd.Series(self.output, index=self.output.keys())
         output_filename = 'APD_averages2.csv'
         print("{}/{}".format(self.output_folder, output_filename))
         
         #save analysis params and results
+        if append == False:
+            if os.path.exists("{}/{}".format(self.output_folder, output_filename)):
+                old = pd.read_csv("{}/{}".format(self.output_folder, output_filename), index_col = 0)
+                print(old.columns)
+                existing_column = [col for col in old.columns if old[col].str.contains(self.abfname).any()]
+                print(existing_column)
+                
+                
+                if len(existing_column) == 0:
+                    new = [old, output]
+                    df = pd.concat(new, axis=1)
+                    df.columns = df.loc['ABF']
+                    df.to_csv("{}/{}".format(self.output_folder,output_filename))
+                else:
+                    old = old.drop(existing_column, axis=1)
+                    new = [old, output]
+                    df = pd.concat(new, axis=1)
+                    df.columns = df.loc['ABF']
+                    df.to_csv("{}/{}".format(self.output_folder, output_filename))
+            else:
+                output.to_csv("{}/{}".format(self.output_folder,output_filename))
         
-        if os.path.exists("{}/{}".format(self.output_folder, output_filename)):
-            old = pd.read_csv("{}/{}".format(self.output_folder, output_filename), index_col = 0)
-            print(old.columns)
-            existing_column = [col for col in old.columns if old[col].str.contains(self.abfname).any()]
-            print(existing_column)
-            
-            
-            if len(existing_column) == 0:
+        if append == True:
+            if os.path.exists("{}/{}".format(self.output_folder, output_filename)):
+                old = pd.read_csv("{}/{}".format(self.output_folder, output_filename), index_col = 0)
                 new = [old, output]
                 df = pd.concat(new, axis=1)
                 df.columns = df.loc['ABF']
                 df.to_csv("{}/{}".format(self.output_folder,output_filename))
             else:
-                old = old.drop(existing_column, axis=1)
-                new = [old, output]
-                df = pd.concat(new, axis=1)
-                df.columns = df.loc['ABF']
-                df.to_csv("{}/{}".format(self.output_folder, output_filename))
-        else:
-            output.to_csv("{}/{}".format(self.output_folder,output_filename))
-        
+                output.to_csv("{}/{}".format(self.output_folder,output_filename))
+                
+                
+                
+            
         
         
         
@@ -221,16 +234,17 @@ class ApSweep:
         self.Ydata = Ydata
         
         #defaults
-        self.Vrest_lefti = 0
-        self.Vrest_righti = 30
-        self.prominence1 = 80
-        self.prominence2 = 20000
-        self.distance = 50
-        self.peak_idxs_idx = 0
+        self.Vrest_lefti = None
+        self.Vrest_righti = None
+        self.prominence1 = None
+        self.prominence2 = None
+        self.distance = None
+        self.peak_idxs_idx = None
         
-        self.analyse()        
+        # self.analyse_sweep()        
     
-    def analyse(self):
+    def update_sweep(self):
+        print("Updating sweep {}".format(self.sw))
         self.calc_sr()  #self.sr, sampling rate in Hz
         self.calc_bcl() #self.bcl, basic cycle length in sec
         self.calc_Vrest(self.Vrest_lefti, self.Vrest_righti) # -> Vrests
@@ -243,6 +257,7 @@ class ApSweep:
         self.calc_APDs() # -> APD20s, APD30s ....
     
     def APsum(self):
+        print("Creating sweep-by-sweep output for sweep {}".format(self.sw))
         data = [
             self.abfname,
             self.sw,
